@@ -4,6 +4,7 @@ import * as fs from 'fs/promises';
 import { createHash } from 'crypto';
 
 const ONBOARDING_KEY = 'talknote.onboarding.completed';
+const DEFAULT_SEPARATOR = '------------------------------------------------------------';
 
 function formatDate(date: Date): string {
   const year = date.getFullYear();
@@ -46,7 +47,7 @@ async function appendInteraction(rootPath: string, userPrompt: string, assistant
   const filePath = path.join(folder, fileName);
 
   const config = vscode.workspace.getConfiguration('talknote');
-  const separator = config.get<string>('separator', '------------------------------');
+  const separator = config.get<string>('separator', DEFAULT_SEPARATOR);
 
   const section = [
     `## ${timestamp(now)}`,
@@ -74,10 +75,28 @@ async function appendInteraction(rootPath: string, userPrompt: string, assistant
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  const output = vscode.window.createOutputChannel('TalkNote');
+  context.subscriptions.push(output);
+
+  let logWriteQueue = Promise.resolve();
+  const enqueueInteractionLog = (rootPath: string, userPrompt: string, assistantReply: string): void => {
+    logWriteQueue = logWriteQueue
+      .then(() => appendInteraction(rootPath, userPrompt, assistantReply))
+      .catch((err) => {
+        output.appendLine(`[LogError] ${String(err)}`);
+      });
+  };
+
   const handler: vscode.ChatRequestHandler = async (request, chatContext, stream, token) => {
     const rootPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!rootPath) {
       stream.markdown('No workspace folder detected.');
+      return;
+    }
+
+    const normalizedPrompt = request.prompt.trim();
+    if (!normalizedPrompt || normalizedPrompt === '@talknote') {
+      stream.markdown('已进入 @talknote 可记录通道，请继续输入你的具体问题。');
       return;
     }
 
@@ -105,34 +124,33 @@ export function activate(context: vscode.ExtensionContext): void {
       stream.markdown(chunk);
     }
 
-    await appendInteraction(rootPath, request.prompt, assistantReply.trim());
+    enqueueInteractionLog(rootPath, request.prompt, assistantReply.trim());
   };
 
   const participant = vscode.chat.createChatParticipant('talknote.copilot', handler);
   participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'assets', 'talknote.svg');
-
   context.subscriptions.push(participant);
 
   const openTalkNoteChat = vscode.commands.registerCommand('talknote.openChat', async () => {
-    try {
-      await vscode.commands.executeCommand('workbench.action.chat.open', {
-        query: '@talknote '
-      });
-    } catch {
-      await vscode.commands.executeCommand('workbench.action.chat.open');
-      await vscode.window.showInformationMessage('已打开 Chat。请在输入框中输入 @talknote 后开始对话。');
-    }
+    await vscode.commands.executeCommand('workbench.action.chat.open');
+    await vscode.window.showInformationMessage('已打开原生 Copilot Chat（TalkNote 不拦截、不影响对话）。');
   });
 
   context.subscriptions.push(openTalkNoteChat);
+
+  const openRecordableChat = vscode.commands.registerCommand('talknote.openRecordableChat', async () => {
+    await vscode.commands.executeCommand('workbench.action.chat.open', {
+      query: '@talknote'
+    });
+    await vscode.window.showInformationMessage('已打开 @talknote 可记录通道。');
+  });
+  context.subscriptions.push(openRecordableChat);
+
   const reopenOnboarding = vscode.commands.registerCommand('talknote.reopenOnboarding', async () => {
     await context.globalState.update(ONBOARDING_KEY, false);
     await vscode.window.showInformationMessage('TalkNote 引导已重置，下一次激活时会重新提示。');
   });
   context.subscriptions.push(reopenOnboarding);
-
-  const output = vscode.window.createOutputChannel('TalkNote');
-  context.subscriptions.push(output);
 
   const quickPrompt = vscode.commands.registerCommand('talknote.quickPrompt', async () => {
     const rootPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -172,17 +190,38 @@ export function activate(context: vscode.ExtensionContext): void {
         output.append(chunk);
       }
       const config = vscode.workspace.getConfiguration('talknote');
-      const separator = config.get<string>('separator', '------------------------------');
+      const separator = config.get<string>('separator', DEFAULT_SEPARATOR);
       output.appendLine('\n' + separator);
 
-      await appendInteraction(rootPath, prompt, assistantReply.trim());
-      vscode.window.showInformationMessage('TalkNote: 已记录对话到 .talknote。');
+      enqueueInteractionLog(rootPath, prompt, assistantReply.trim());
+      vscode.window.showInformationMessage('TalkNote: 已加入后台记录队列。');
     } catch (err) {
       output.appendLine(`Error: ${String(err)}`);
       vscode.window.showErrorMessage('发送到 Copilot 或记录时出错，查看 TalkNote 输出了解详情。');
     }
   });
   context.subscriptions.push(quickPrompt);
+
+  const recordManual = vscode.commands.registerCommand('talknote.recordManual', async () => {
+    const rootPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!rootPath) {
+      vscode.window.showErrorMessage('未检测到工作区文件夹，无法记录。');
+      return;
+    }
+
+    const userPrompt = await vscode.window.showInputBox({ prompt: '输入用户消息（手动补录）' });
+    if (!userPrompt) {
+      return;
+    }
+    const assistantReply = await vscode.window.showInputBox({ prompt: '输入 AI 回复（手动补录）' });
+    if (!assistantReply) {
+      return;
+    }
+
+    enqueueInteractionLog(rootPath, userPrompt.trim(), assistantReply.trim());
+    vscode.window.showInformationMessage('TalkNote: 手动补录已加入后台记录队列。');
+  });
+  context.subscriptions.push(recordManual);
 
   void (async () => {
     const completed = context.globalState.get<boolean>(ONBOARDING_KEY, false);
@@ -193,13 +232,13 @@ export function activate(context: vscode.ExtensionContext): void {
     const selectNow = '立即切换';
     const skip = '稍后';
     const choice = await vscode.window.showInformationMessage(
-      'TalkNote 已安装。为开启自动记录，请首次切换到 @talknote 参与者。',
+      'TalkNote 已安装。默认不拦截原生 Copilot 对话；如需自动记录，请使用 @talknote 或“Open Recordable Chat”。',
       selectNow,
       skip
     );
 
     if (choice === selectNow) {
-      await vscode.commands.executeCommand('talknote.openChat');
+      await vscode.commands.executeCommand('talknote.openRecordableChat');
     }
 
     await context.globalState.update(ONBOARDING_KEY, true);

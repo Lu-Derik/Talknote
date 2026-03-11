@@ -24,12 +24,15 @@
         "description": "Proxy to Copilot and persist chat logs",
         "isSticky": false
       }
-    ]
-    ,
+    ],
     "commands": [
       {
         "command": "talknote.openChat",
-        "title": "TalkNote: Open Chat"
+        "title": "TalkNote: Open Native Chat"
+      },
+      {
+        "command": "talknote.openRecordableChat",
+        "title": "TalkNote: Open Recordable Chat"
       },
       {
         "command": "talknote.reopenOnboarding",
@@ -38,6 +41,10 @@
       {
         "command": "talknote.quickPrompt",
         "title": "TalkNote: Quick Prompt and Record"
+      },
+      {
+        "command": "talknote.recordManual",
+        "title": "TalkNote: Record Manual Interaction"
       }
     ],
     "keybindings": [
@@ -53,13 +60,8 @@
       "properties": {
         "talknote.separator": {
           "type": "string",
-          "default": "------------------------------",
+          "default": "------------------------------------------------------------",
           "description": "Separator used between recorded interactions"
-        },
-        "talknote.requireAtMention": {
-          "type": "boolean",
-          "default": true,
-          "description": "Require @talknot mention to record a talk"
         }
       }
     }
