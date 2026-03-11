@@ -1,0 +1,44 @@
+{
+  "name": "talknote",
+  "displayName": "TalkNote",
+  "description": "Record chat interactions with Copilot into markdown files under .talknote",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onChatParticipant:talknote.copilot"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "talknote.copilot",
+        "name": "talknote",
+        "fullName": "TalkNote",
+        "description": "Proxy to Copilot and persist chat logs",
+        "isSticky": true
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npx vsce package --allow-missing-repository",
+    "publish": "npx @vscode/vsce publish",
+    "publish:patch": "npx @vscode/vsce publish patch",
+    "publish:minor": "npx @vscode/vsce publish minor",
+    "publish:major": "npx @vscode/vsce publish major"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.11",
+    "@types/vscode": "^1.96.0",
+    "typescript": "^5.6.3",
+    "vsce": "^2.15.0"
+  }
+}
