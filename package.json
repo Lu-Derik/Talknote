@@ -22,9 +22,47 @@
         "name": "talknote",
         "fullName": "TalkNote",
         "description": "Proxy to Copilot and persist chat logs",
-        "isSticky": true
+        "isSticky": false
       }
     ]
+    ,
+    "commands": [
+      {
+        "command": "talknote.openChat",
+        "title": "TalkNote: Open Chat"
+      },
+      {
+        "command": "talknote.reopenOnboarding",
+        "title": "TalkNote: Reopen Onboarding"
+      },
+      {
+        "command": "talknote.quickPrompt",
+        "title": "TalkNote: Quick Prompt and Record"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "talknote.quickPrompt",
+        "key": "ctrl+alt+enter",
+        "when": "editorTextFocus"
+      }
+    ]
+    ,
+    "configuration": {
+      "type": "object",
+      "properties": {
+        "talknote.separator": {
+          "type": "string",
+          "default": "------------------------------",
+          "description": "Separator used between recorded interactions"
+        },
+        "talknote.requireAtMention": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require @talknot mention to record a talk"
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",

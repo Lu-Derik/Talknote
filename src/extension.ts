@@ -45,6 +45,9 @@ async function appendInteraction(rootPath: string, userPrompt: string, assistant
   const fileName = `${projectName}-${date}-${talkId}.md`;
   const filePath = path.join(folder, fileName);
 
+  const config = vscode.workspace.getConfiguration('talknote');
+  const separator = config.get<string>('separator', '------------------------------');
+
   const section = [
     `## ${timestamp(now)}`,
     '',
@@ -56,7 +59,7 @@ async function appendInteraction(rootPath: string, userPrompt: string, assistant
     '',
     assistantReply || '(empty response)',
     '',
-    '---',
+    separator,
     ''
   ].join('\n');
 
@@ -122,6 +125,64 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   context.subscriptions.push(openTalkNoteChat);
+  const reopenOnboarding = vscode.commands.registerCommand('talknote.reopenOnboarding', async () => {
+    await context.globalState.update(ONBOARDING_KEY, false);
+    await vscode.window.showInformationMessage('TalkNote 引导已重置，下一次激活时会重新提示。');
+  });
+  context.subscriptions.push(reopenOnboarding);
+
+  const output = vscode.window.createOutputChannel('TalkNote');
+  context.subscriptions.push(output);
+
+  const quickPrompt = vscode.commands.registerCommand('talknote.quickPrompt', async () => {
+    const rootPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!rootPath) {
+      vscode.window.showErrorMessage('未检测到工作区文件夹，无法发送 prompt。');
+      return;
+    }
+
+    let prompt = '';
+    const editor = vscode.window.activeTextEditor;
+    if (editor && !editor.selection.isEmpty) {
+      prompt = editor.document.getText(editor.selection).trim();
+    }
+
+    if (!prompt) {
+      const input = await vscode.window.showInputBox({ prompt: '输入要发送到 Copilot 的提示（Quick Prompt）' });
+      if (!input) { return; }
+      prompt = input.trim();
+    }
+
+    output.appendLine(`Prompt: ${prompt}`);
+
+    try {
+      const models = await (vscode as any).lm.selectChatModels({ vendor: 'copilot' });
+      const model = models && models.length > 0 ? models[0] : undefined;
+      if (!model) {
+        vscode.window.showErrorMessage('未找到可用的 Copilot 聊天模型。');
+        return;
+      }
+
+      const messages = [vscode.LanguageModelChatMessage.User(prompt)];
+      const response = await model.sendRequest(messages, {}, undefined);
+      let assistantReply = '';
+      for await (const chunk of response.text) {
+        assistantReply += chunk;
+        // optional: stream to output
+        output.append(chunk);
+      }
+      const config = vscode.workspace.getConfiguration('talknote');
+      const separator = config.get<string>('separator', '------------------------------');
+      output.appendLine('\n' + separator);
+
+      await appendInteraction(rootPath, prompt, assistantReply.trim());
+      vscode.window.showInformationMessage('TalkNote: 已记录对话到 .talknote。');
+    } catch (err) {
+      output.appendLine(`Error: ${String(err)}`);
+      vscode.window.showErrorMessage('发送到 Copilot 或记录时出错，查看 TalkNote 输出了解详情。');
+    }
+  });
+  context.subscriptions.push(quickPrompt);
 
   void (async () => {
     const completed = context.globalState.get<boolean>(ONBOARDING_KEY, false);
